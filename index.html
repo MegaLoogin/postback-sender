@@ -11,15 +11,124 @@
       margin: 0;
       padding: 0;
       min-height: 100vh;
+      display: flex;
+      gap: 20px;
     }
-    .container {
+    .main-container {
+      flex: 1;
       max-width: 650px;
-      margin: 40px auto;
+      margin: 40px 0 40px 40px;
       background: #fff;
       border-radius: 16px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.07);
       padding: 2.5em 2em 2em 2em;
       border: 1.5px solid #e3e7ed;
+    }
+    .logs-sidebar {
+      width: 350px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.07);
+      padding: 20px;
+      margin: 40px 40px 40px 0;
+      border: 1.5px solid #e3e7ed;
+      height: fit-content;
+    }
+    .stats-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      font-size: 0.9em;
+    }
+    .stats-bar .success-count {
+      color: #28a745;
+      font-weight: 600;
+    }
+    .stats-bar .error-count {
+      color: #dc3545;
+      font-weight: 600;
+    }
+    .log-item {
+      padding: 6px 10px;
+      margin-bottom: 4px;
+      border-radius: 6px;
+      background: #f8f9fa;
+      border: 1px solid #e3e7ed;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 0.9em;
+    }
+    .log-item:hover {
+      background: #f0f2f5;
+    }
+    .log-item.expanded {
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .log-item.success {
+      border-left: 3px solid #28a745;
+    }
+    .log-item.error {
+      border-left: 3px solid #dc3545;
+    }
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .log-item .subid {
+      font-weight: 500;
+      color: #333;
+    }
+    .log-item .status {
+      font-size: 0.85em;
+      padding: 2px 6px;
+      border-radius: 4px;
+      min-width: 45px;
+      text-align: center;
+    }
+    .log-item .status.success {
+      background: #d4edda;
+      color: #155724;
+    }
+    .log-item .status.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .log-details {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #e3e7ed;
+      display: none;
+      font-size: 0.85em;
+    }
+    .log-item.expanded .log-details {
+      display: block;
+    }
+    .log-details pre {
+      background: #f8f9fa;
+      padding: 8px;
+      border-radius: 4px;
+      margin: 4px 0;
+      font-size: 0.85em;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .log-details .url {
+      word-break: break-all;
+      font-size: 0.85em;
+      color: #666;
+    }
+    .log-details .url a {
+      color: #0066cc;
+      text-decoration: none;
+    }
+    .log-details .url a:hover {
+      text-decoration: underline;
     }
     h2 {
       margin-top: 0;
@@ -146,7 +255,7 @@
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="main-container">
     <h2>Keitaro Postback Tester</h2>
     <form id="multiGetForm" autocomplete="off">
       <label>
@@ -205,6 +314,15 @@
 
     <div class="results" id="results"></div>
   </div>
+  <div class="logs-sidebar" id="logsSidebar">
+    <h3>Результаты запросов</h3>
+    <div class="stats-bar" id="statsBar">
+      <span>Всего: <b>0</b></span>
+      <span class="success-count">Успешно: <b>0</b></span>
+      <span class="error-count">Ошибок: <b>0</b></span>
+    </div>
+    <div id="logsList"></div>
+  </div>
 
   <script>
     const form = document.getElementById('multiGetForm');
@@ -237,9 +355,27 @@
 
     form.addEventListener('submit', async function(e) {
       e.preventDefault();
-      resultsDiv.innerHTML = '';
+      const logsList = document.getElementById('logsList');
+      const statsBar = document.getElementById('statsBar');
+      logsList.innerHTML = '';
+      
+      // Сбрасываем статистику
+      let totalCount = 0;
+      let successCount = 0;
+      let errorCount = 0;
+      
+      const updateStats = () => {
+        statsBar.innerHTML = `
+          <span>Всего: <b>${totalCount}</b></span>
+          <span class="success-count">Успешно: <b>${successCount}</b></span>
+          <span class="error-count">Ошибок: <b>${errorCount}</b></span>
+        `;
+      };
+
       const urlTemplate = urlTemplateInput.value.trim();
       const ids = idsInput.value.split('\n').map(l => l.trim()).filter(l => l.length);
+      totalCount = ids.length;
+      updateStats();
 
       let subidParam, statusParam, payoutParam, currencyParam, status, payout, currency;
       if (!noChangeUrl.checked) {
@@ -256,7 +392,6 @@
       for (const id of ids) {
         let url;
         if (noChangeUrl.checked) {
-          // Если в ссылке есть {subid} — подставляем, иначе используем как есть
           if (urlTemplate.includes('{subid}')) {
             url = urlTemplate.replaceAll('{subid}', encodeURIComponent(id));
           } else {
@@ -269,38 +404,50 @@
           if (currency) url = addParamToUrl(url, currencyParam, currency);
         }
 
-        const row = document.createElement('div');
-        row.className = 'result-row';
-        row.innerHTML = `
-          <div><b>sub_id:</b> ${id}</div>
-          <div class="url"><b>URL:</b> <a href="${url}" target="_blank" rel="noopener">${url}</a></div>
-          <div><b>Статус:</b> <span>Отправка...</span></div>
-          <div class="response-block" style="display:none;"><b>Ответ:</b> <pre></pre></div>
+        const logItem = document.createElement('div');
+        logItem.className = 'log-item';
+        logItem.innerHTML = `
+          <div class="log-header">
+            <span class="subid">${id}</span>
+            <span class="status">Отправка...</span>
+          </div>
+          <div class="log-details">
+            <div class="url"><b>URL:</b> <a href="${url}" target="_blank" rel="noopener">${url}</a></div>
+            <div class="response"><b>Ответ:</b> <pre></pre></div>
+          </div>
         `;
-        resultsDiv.appendChild(row);
+        logsList.appendChild(logItem);
 
-        const statusSpan = row.querySelector('span');
-        const responseBlock = row.querySelector('.response-block');
-        const responsePre = row.querySelector('pre');
+        const statusSpan = logItem.querySelector('.status');
+        const responsePre = logItem.querySelector('pre');
+
+        logItem.addEventListener('click', function() {
+          this.classList.toggle('expanded');
+        });
 
         try {
           const response = await fetch(url, { method: 'GET' });
           let text = await response.text();
           if (response.ok) {
-            statusSpan.textContent = `Успех (${response.status})`;
-            statusSpan.className = 'status-success';
+            statusSpan.textContent = 'OK';
+            statusSpan.className = 'status success';
+            logItem.className = 'log-item success';
+            successCount++;
           } else {
-            statusSpan.textContent = `Ошибка (${response.status})`;
-            statusSpan.className = 'status-fail';
+            statusSpan.textContent = 'Error';
+            statusSpan.className = 'status error';
+            logItem.className = 'log-item error';
+            errorCount++;
           }
-          responseBlock.style.display = 'block';
           responsePre.textContent = text || '(пустой ответ)';
         } catch (err) {
-          statusSpan.textContent = 'Ошибка: ' + err.message;
-          statusSpan.className = 'status-fail';
-          responseBlock.style.display = 'block';
+          statusSpan.textContent = 'Error';
+          statusSpan.className = 'status error';
+          logItem.className = 'log-item error';
           responsePre.textContent = '(нет ответа)';
+          errorCount++;
         }
+        updateStats();
       }
     });
   </script>
